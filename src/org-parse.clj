@@ -422,24 +422,26 @@
 
       ;; Then filter headlines that are in a section with a matching custom ID
       (filter (fn [headline]
-                (let [path-custom-ids (for [path-title (:path headline)]
-                                        ;; Find the custom-id for this section by title
-                                        ;; This is a simplification - in a real implementation
-                                        ;; you would need a more robust way to identify sections
-                                        (some (fn [h]
-                                                (when (= path-title (:title h))
-                                                  (get-in h [:properties :custom_id])))
-                                              headlines))]
+                (let [path-custom-ids
+                      (for [path-title (:path headline)]
+                        ;; Find the custom-id for this section by title
+                        ;; This is a simplification - in a real implementation
+                        ;; you would need a more robust way to identify sections
+                        (some (fn [h]
+                                (when (= path-title (:title h))
+                                  (get-in h [:properties :custom_id])))
+                              headlines))]
                   (some @matching-custom-ids (remove nil? path-custom-ids))))
               headlines))
     headlines))
 
 ;; Output functions
 (defn prepare-for-output [headlines format]
-  (case format
-    "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
-    "json" headlines
-    "yaml" headlines))
+  (let [headlines (mapv #(update % :path (fn [path] (butlast path))) headlines)]
+    (case format
+      "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
+      "json" headlines
+      "yaml" headlines)))
 
 (defn write-json [data file-path]
   (with-open [writer (io/writer file-path)]
