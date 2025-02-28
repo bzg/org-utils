@@ -5,6 +5,12 @@
 
 Check the help with =-h= or =--help=.
 
+* Feedback
+
+I don't use issues for now.
+
+To get or provide feedback, simply send an email to *bzg@bzg.fr*.
+
 * Install and update
 
 - =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-parse.clj=
