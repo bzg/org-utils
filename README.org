@@ -13,6 +13,15 @@ To get or provide feedback, simply send an email to *bzg@bzg.fr*.
 
 * Install and update
 
+The scripts are written in [[https://clojure.org][Clojure]] with [[https://babashka.org][Babashka]]. You will need to
+install Clojure, Babashka and bbin. Clojure scripting runtime.
+
+- [[https://clojure.org/guides/install_clojure][Install Clojure]]
+- [[https://github.com/babashka/babashka#installation][Install babashka]]
+- [[https://github.com/babashka/bbin#installation][Install bbin]]
+
+Once =bbin= is installed in your environment, run this in a terminal:
+
 - =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-parse.clj=
 - =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-unwrap.clj=
 
