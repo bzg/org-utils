@@ -1,0 +1,19 @@
+#+title: An Org file
+#+author: Bastien Guerry
+
+* A headline
+  :PROPERTIES:
+  :EXAMPLE_PROPERTY: With a value
+  :END:
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do...
+
+** Another headline
+  :PROPERTIES:
+  :CUSTOM_ID: With a custom id
+  :END:
+
+# With a list:
+
+- An item
+- Another item

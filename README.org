@@ -1,0 +1,15 @@
+* Org utils
+
+- org-unwrap :: Take an Org file and unwrap its paragraphs and lists.
+- org-parse :: Take an Org file and output it as data in json/yaml/edn format.
+
+Check the help with =-h= or =--help=.
+
+* Install and update
+
+- =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-parse.clj=
+- =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-unwrap.clj=
+
+* License
+
+Scripts in this repositories are licensed under [[LICENSES/EPL-2.0.txt][EPL-2.0]].
