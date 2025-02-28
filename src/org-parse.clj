@@ -28,9 +28,9 @@
     :parse-fn re-pattern]
    ["-H" "--html" "Convert content to HTML"]
    ["-M" "--markdown" "Convert content to Markdown"]
-   ["-f" "--format FORMAT" "Output format: json, edn, or yaml"
+   ["-f" "--format FORMAT" "Output format: json, edn, yaml, or org"
     :default "json"
-    :validate [#(contains? #{"json" "edn" "yaml"} %) "Must be one of: json, edn, yaml"]]
+    :validate [#(contains? #{"json" "edn" "yaml" "org"} %) "Must be one of: json, edn, yaml, org"]]
    ["-h" "--help" "Show this help"]])
 
 ;; Utility functions
@@ -58,7 +58,8 @@
              "  org-parse -H notes.org                   # Convert content to HTML"
              "  org-parse -M notes.org                   # Convert content to Markdown"
              "  org-parse -f edn notes.org               # Output in EDN format"
-             "  org-parse -f yaml notes.org              # Output in YAML format"]))
+             "  org-parse -f yaml notes.org              # Output in YAML format"
+             "  org-parse -f org notes.org               # Output in Org format (default if no conversion)"]))
 
 ;; HTML conversion functions
 (defn extract-links [text]
@@ -416,12 +417,39 @@
               headlines))
     headlines))
 
+;; Define print-org-structure before it's used in write-org
+(defn print-org-structure [headlines]
+  (doseq [headline headlines]
+    ;; Print headline with proper number of asterisks
+    (println (str (apply str (repeat (:level headline) "*"))
+                  " " (:title headline)))
+
+    ;; Print properties if any
+    (when (seq (:properties headline))
+      (println "  :PROPERTIES:")
+      (doseq [[k v] (:properties headline)]
+        (println (str "  :" (str/upper-case (name k)) ": " v)))
+      (println "  :END:"))
+
+    ;; Print content
+    (when (seq (:content headline))
+      (if (string? (:content headline))
+        ;; If content has been converted to HTML/Markdown, it's a string
+        (println (:content headline))
+        ;; If original format, it's still a vector of lines
+        (do
+          (println) ; Add empty line after properties or headline
+          (doseq [line (:content headline)]
+            (println line))
+          (println))))))
+
 ;; Output functions
 (defn prepare-for-output [headlines format]
   (case format
     "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
     "json" headlines
-    "yaml" headlines))
+    "yaml" headlines
+    "org"  headlines))
 
 (defn write-json [data file-path]
   (with-open [writer (io/writer file-path)]
@@ -437,6 +465,10 @@
 (defn write-yaml [data file-path]
   (with-open [writer (io/writer file-path)]
     (.write writer (yaml/generate-string data :dumper-options {:flow-style :block}))))
+
+(defn write-org [headlines file-path]
+  (with-open [writer (io/writer file-path)]
+    (.write writer (with-out-str (print-org-structure headlines)))))
 
 (defn clean-headline [headline convert-to-html? convert-to-markdown?]
   (let [cleaned (-> headline
@@ -458,38 +490,15 @@
       :else
       cleaned)))
 
-(defn print-org-structure [headlines]
-  (doseq [headline headlines]
-    (println (str (apply str (repeat (:level headline) "*"))
-                  " " (:title headline)))
-
-    ;; Print properties if any
-    (when (seq (:properties headline))
-      (println "  :PROPERTIES:")
-      (doseq [[k v] (:properties headline)]
-        (println (str "  :" (name k) ": " v)))
-      (println "  :END:"))
-
-    ;; Print content
-    (when (seq (:content headline))
-      (println (:content headline))
-      (println))))
-
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (cli/parse-opts args cli-options)]
     (when (and (:html options) (:markdown options))
       (throw (Exception. "Error: Both HTML and Markdown conversion requested")))
     (cond
-      (:help options)
-      (println (usage summary))
-
-      errors
-      (do (println (str/join \newline errors))
-          (println (usage summary)))
-
-      (empty? arguments)
-      (println (usage summary))
-
+      (:help options)    (println (usage summary))
+      errors             (do (println (str/join \newline errors))
+                             (println (usage summary)))
+      (empty? arguments) (println (usage summary))
       :else
       (let [file-path                 (first arguments)
             min-level                 (:min-level options)
@@ -502,24 +511,41 @@
             convert-to-markdown?      (:markdown options)
             output-format             (:format options)
             all-headlines             (parse-org-file file-path convert-to-html? convert-to-markdown?)
-            level-filtered            (filter-headlines-by-level all-headlines min-level max-level)
-            title-filtered            (filter-headlines-by-headline level-filtered title-pattern)
-            custom-id-filtered        (filter-headlines-by-custom-id title-filtered custom-id-pattern)
-            section-filtered          (filter-headlines-by-section custom-id-filtered section-title-pattern)
-            filtered-headlines        (filter-headlines-by-section-custom-id section-filtered section-custom-id-pattern)
-            clean-headlines           (mapv #(clean-headline % convert-to-html? convert-to-markdown?) filtered-headlines)
-            prepared-headlines        (prepare-for-output clean-headlines output-format)
+            level-filtered            (filter-headlines-by-level
+                                       all-headlines min-level max-level)
+            title-filtered            (filter-headlines-by-headline
+                                       level-filtered title-pattern)
+            custom-id-filtered        (filter-headlines-by-custom-id
+                                       title-filtered custom-id-pattern)
+            section-filtered          (filter-headlines-by-section
+                                       custom-id-filtered section-title-pattern)
+            filtered-headlines        (filter-headlines-by-section-custom-id
+                                       section-filtered section-custom-id-pattern)
+            clean-headlines           (mapv #(clean-headline
+                                              % convert-to-html? convert-to-markdown?) filtered-headlines)
             output-path               (str/replace file-path #"\.org$" (str "." output-format))]
 
-        (print-org-structure clean-headlines)
+        ;; Output handling based on format and conversion options
+        (cond
+          ;; When specific output format is requested, write to file
+          (not= output-format "json") ; If it's not the default
+          (let [prepared-headlines (prepare-for-output clean-headlines output-format)]
+            (case output-format
+              "json" (write-json prepared-headlines output-path)
+              "edn"  (write-edn prepared-headlines output-path)
+              "yaml" (write-yaml prepared-headlines output-path)
+              "org"  (write-org clean-headlines output-path))
+            (println (str (str/upper-case output-format) " output written to " output-path)))
 
-        ;; Write to the appropriate format
-        (case output-format
-          "json" (write-json prepared-headlines output-path)
-          "edn"  (write-edn prepared-headlines output-path)
-          "yaml" (write-yaml prepared-headlines output-path))
+          ;; If HTML or Markdown conversion requested, use JSON as default
+          (or convert-to-html? convert-to-markdown?)
+          (let [prepared-headlines (prepare-for-output clean-headlines "json")]
+            (write-json prepared-headlines output-path)
+            (println (str "JSON output written to " output-path)))
 
-        (println (str (str/upper-case output-format) " output written to " output-path))))))
+          ;; Default behavior: print org structure to stdout if no other format specified
+          :else
+          (print-org-structure clean-headlines))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
