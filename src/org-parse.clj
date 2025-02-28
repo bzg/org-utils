@@ -454,9 +454,19 @@
               *print-dup*    false]
       (pprint/pprint data writer))))
 
+;; Replace the existing write-yaml function with this:
 (defn write-yaml [data file-path]
   (with-open [writer (io/writer file-path)]
-    (.write writer (yaml/generate-string data :dumper-options {:flow-style :block}))))
+    ;; Convert keywords in properties to strings before writing
+    (let [prepared-data
+          (mapv (fn [headline]
+                  (update headline :properties
+                          #(into {} (map (fn [[k v]] [(name k) v]) %))))
+                data)]
+      (.write writer
+              (yaml/generate-string
+               prepared-data
+               :dumper-options {:flow-style :block})))))
 
 (defn clean-headline [headline convert-to-html? convert-to-markdown?]
   (let [cleaned (-> headline
