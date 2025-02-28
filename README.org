@@ -25,6 +25,11 @@ Once =bbin= is installed in your environment, run this in a terminal:
 - =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-parse.clj=
 - =bbin install https://raw.githubusercontent.com/bzg/org-utils/refs/heads/main/src/org-unwrap.clj=
 
+* Support the Clojure(script) ecosystem
+
+If you like Clojure(script), you can support the ecosystem by making a
+donation to [[https://www.clojuriststogether.org][clojuriststogether.org]].
+
 * License
 
 Scripts in this repositories are licensed under [[LICENSES/EPL-2.0.txt][EPL-2.0]].
