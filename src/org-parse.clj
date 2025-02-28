@@ -72,33 +72,33 @@
 ;; HTML conversion functions
 (defn extract-links [text]
   (let [link-pattern #"\[\[([^\]]+)\]\[([^\]]+)\]\]|\[\[([^\]]+)\]\]"
-        matches (re-seq link-pattern text)
-        links (map (fn [match]
+        matches      (re-seq link-pattern text)
+        links        (map (fn [match]
                      (if (nth match 2) ; Full link with description
                        {:full (first match)
-                        :url (second match)
+                        :url  (second match)
                         :text (nth match 2)}
                        {:full (first match)
-                        :url (nth match 3)
+                        :url  (nth match 3)
                         :text (nth match 3)}))
                    matches)]
     links))
 
 (defn replace-links-with-placeholders [text]
-  (let [links (extract-links text)
+  (let [links           (extract-links text)
         placeholder-map (zipmap 
                          (map :full links)
                          (map-indexed (fn [idx _] (str "LINKPLACEHOLDER" idx)) links))]
     [(reduce (fn [t [original placeholder]]
-              (str/replace t original placeholder))
-            text
-            placeholder-map)
+               (str/replace t original placeholder))
+             text
+             placeholder-map)
      placeholder-map
      links]))
 
 (defn restore-links-as-html [text placeholder-map links]
   (reduce (fn [t [idx placeholder]]
-            (let [link (nth links idx)
+            (let [link      (nth links idx)
                   html-link (str "<a href=\"" (:url link) "\">" (:text link) "</a>")]
               (str/replace t placeholder html-link)))
           text
@@ -107,7 +107,7 @@
 
 (defn org-to-html-markup [text]
   (let [[text-with-placeholders placeholder-map links] (replace-links-with-placeholders text)
-        converted (-> text-with-placeholders
+        converted                                      (-> text-with-placeholders
                       (str/replace #"\*([^\*]+)\*" "<strong>$1</strong>")      ;; bold
                       (str/replace #"/([^/]+)/" "<em>$1</em>")                 ;; italic
                       (str/replace #"_([^_]+)_" "<u>$1</u>")                   ;; underline
@@ -153,7 +153,7 @@
   (if (empty? content-lines)
     ""
     (loop [remaining-lines content-lines
-           result []]
+           result          []]
       (if (empty? remaining-lines)
         (str/join "\n" result)
         (let [current-line (first remaining-lines)]
@@ -161,7 +161,7 @@
             ;; List processing
             (is-list-item? current-line)
             (let [list-items (take-while is-list-item? remaining-lines)
-                  list-html (process-list-items list-items)]
+                  list-html  (process-list-items list-items)]
               (recur (drop (count list-items) remaining-lines)
                      (conj result list-html)))
             
@@ -173,33 +173,33 @@
 ;; Markdown conversion functions
 (defn extract-links-md [text]
   (let [link-pattern #"\[\[([^\]]+)\]\[([^\]]+)\]\]|\[\[([^\]]+)\]\]"
-        matches (re-seq link-pattern text)
-        links (map (fn [match]
+        matches      (re-seq link-pattern text)
+        links        (map (fn [match]
                      (if (nth match 2) ; Full link with description
                        {:full (first match)
-                        :url (second match)
+                        :url  (second match)
                         :text (nth match 2)}
                        {:full (first match)
-                        :url (nth match 3)
+                        :url  (nth match 3)
                         :text (nth match 3)}))
                    matches)]
     links))
 
 (defn replace-links-with-placeholders-md [text]
-  (let [links (extract-links-md text)
+  (let [links           (extract-links-md text)
         placeholder-map (zipmap 
                          (map :full links)
                          (map-indexed (fn [idx _] (str "LINKPLACEHOLDER" idx)) links))]
     [(reduce (fn [t [original placeholder]]
-              (str/replace t original placeholder))
-            text
-            placeholder-map)
+               (str/replace t original placeholder))
+             text
+             placeholder-map)
      placeholder-map
      links]))
 
 (defn restore-links-as-markdown [text placeholder-map links]
   (reduce (fn [t [idx placeholder]]
-            (let [link (nth links idx)
+            (let [link    (nth links idx)
                   md-link (str "[" (:text link) "](" (:url link) ")")]
               (str/replace t placeholder md-link)))
           text
@@ -208,7 +208,7 @@
 
 (defn org-to-markdown-markup [text]
   (let [[text-with-placeholders placeholder-map links] (replace-links-with-placeholders-md text)
-        converted (-> text-with-placeholders
+        converted                                      (-> text-with-placeholders
                       (str/replace #"\*([^\*]+)\*" "**$1**")      ;; bold
                       (str/replace #"/([^/]+)/" "*$1*")           ;; italic
                       (str/replace #"_([^_]+)_" "_$1_")           ;; underline (keep as is in Markdown)
@@ -236,7 +236,7 @@
     
     (is-ordered-list-item-md? line)
     (let [spaces (count (re-find #"^\s*" line))
-          num (re-find #"\d+" line)]
+          num    (re-find #"\d+" line)]
       (str (apply str (repeat spaces " ")) num ". " 
            (str/trim (str/replace line #"^\s*\d+[.)]\s+" ""))))
     
@@ -255,7 +255,7 @@
     ""
     (let [processed-lines (mapv org-to-markdown-markup content-lines)
           ;; Join lines preserving line breaks for Markdown
-          result (str/join "\n" processed-lines)]
+          result          (str/join "\n" processed-lines)]
       result)))
 
 ;; Org-mode parsing functions
@@ -274,7 +274,7 @@
 
 (defn process-property-drawer [lines]
   (loop [remaining-lines lines
-         properties {}
+         properties      {}
          processed-count 0]
     (let [current-line (first remaining-lines)]
       (cond
@@ -299,15 +299,6 @@
                properties
                (inc processed-count))))))
 
-(defn parse-headline [line]
-  (let [level (count (re-find #"^\*+" line))
-        title (str/trim (subs line level))]
-    {:level     level
-     :title     title
-     :content   []
-     :properties {}
-     :path      [title]}))
-
 ;; Path tracking needs to be updated for HTML/Markdown-converted titles
 (defn parse-org-file [file-path convert-to-html? convert-to-markdown?]
   (with-open [rdr (io/reader file-path)]
@@ -319,16 +310,16 @@
         (cond
           ;; New headline
           (str/starts-with? line "*")
-          (let [new-level (count (re-find #"^\*+" line))
-                orig-title (str/trim (subs line new-level))
-                title (cond
-                        convert-to-html? (org-to-html-markup orig-title)
-                        convert-to-markdown? (org-to-markdown-markup orig-title)
-                        :else orig-title)
+          (let [new-level      (count (re-find #"^\*+" line))
+                orig-title     (str/trim (subs line new-level))
+                title          (cond
+                                 convert-to-html?     (org-to-html-markup orig-title)
+                                 convert-to-markdown? (org-to-markdown-markup orig-title)
+                                 :else                orig-title)
                 ;; Store original title in path but converted title in headline
-                path-title (cond 
-                             (or convert-to-html? convert-to-markdown?) orig-title
-                             :else title)
+                path-title     (cond 
+                                 (or convert-to-html? convert-to-markdown?) orig-title
+                                 :else                                      title)
                 ;; Update path stack based on new headline level
                 new-path-stack (if (empty? path-stack)
                                  [path-title]
@@ -336,26 +327,26 @@
                                    (cond
                                      (> new-level current-level) (conj path-stack path-title)
                                      (= new-level current-level) (conj (vec (butlast path-stack)) path-title)
-                                     :else (conj (vec (take (dec new-level) path-stack)) path-title))))
-                new-headline {:level     new-level
-                              :title     title
-                              :content   []
-                              :properties {}
-                              :path      new-path-stack}]
+                                     :else                       (conj (vec (take (dec new-level) path-stack)) path-title))))
+                new-headline   {:level      new-level
+                                :title      title
+                                :content    []
+                                :properties {}
+                                :path       new-path-stack}]
             (recur (rest lines)
                    new-headline
                    (if current-headline
                      (conj headlines (update current-headline :content 
-                                            #(filterv (fn [line] 
-                                                        (and (not (str/blank? line))
-                                                             (not (is-comment? line)))) %)))
+                                             #(filterv (fn [line] 
+                                                         (and (not (str/blank? line))
+                                                              (not (is-comment? line)))) %)))
                      headlines)
                    new-path-stack))
           
           ;; Property drawer
           (and current-headline (in-property-drawer? lines))
           (let [[props lines-consumed] (process-property-drawer lines)
-                updated-headline (update current-headline :properties merge props)]
+                updated-headline       (update current-headline :properties merge props)]
             (recur (drop lines-consumed lines)
                    updated-headline
                    headlines
@@ -373,9 +364,9 @@
         ;; End of file
         (if current-headline
           (conj headlines (update current-headline :content 
-                                 #(filterv (fn [line] 
-                                             (and (not (str/blank? line))
-                                                  (not (is-comment? line)))) %)))
+                                  #(filterv (fn [line] 
+                                              (and (not (str/blank? line))
+                                                   (not (is-comment? line)))) %)))
           headlines)))))
 
 ;; Filtering functions
@@ -428,7 +419,7 @@
                                                   (get-in h [:properties :custom_id])))
                                               headlines))]
                   (some @matching-custom-ids (remove nil? path-custom-ids))))
-            headlines))
+              headlines))
     headlines))
 
 ;; Output functions
@@ -445,8 +436,8 @@
 (defn write-edn [data file-path]
   (with-open [writer (io/writer file-path)]
     (binding [*print-length* nil
-              *print-level* nil
-              *print-dup* false]
+              *print-level*  nil
+              *print-dup*    false]
       (pprint/pprint data writer))))
 
 (defn write-yaml [data file-path]
@@ -458,8 +449,8 @@
 (defn clean-headline [headline convert-to-html? convert-to-markdown?]
   (let [cleaned (-> headline
                     (update :content #(filterv (fn [line] 
-                                              (and (not (str/blank? line))
-                                                   (not (is-comment? line)))) %))
+                                                 (and (not (str/blank? line))
+                                                      (not (is-comment? line)))) %))
                     (update :properties #(into {} (remove (fn [[_ v]] (str/blank? v)) %))))]
     (cond
       convert-to-html?
@@ -506,16 +497,16 @@
       (println (usage summary))
       
       :else
-      (let [file-path             (first arguments)
-            min-level             (:min-level options)
-            max-level             (:max-level options)
-            custom-id-pattern     (:custom-id options)
-            section-title-pattern (:section-title options)
-            title-pattern         (:title options)
+      (let [file-path                 (first arguments)
+            min-level                 (:min-level options)
+            max-level                 (:max-level options)
+            custom-id-pattern         (:custom-id options)
+            section-title-pattern     (:section-title options)
+            title-pattern             (:title options)
             section-custom-id-pattern (:section-custom-id options)
-            convert-to-html?      (:html options)
-            convert-to-markdown?  (:markdown options)
-            output-format         (:format options)
+            convert-to-html?          (:html options)
+            convert-to-markdown?      (:markdown options)
+            output-format             (:format options)
             
             ;; Check if both HTML and Markdown options are specified
             _ (when (and convert-to-html? convert-to-markdown?)
@@ -528,15 +519,15 @@
                 (println "Falling back to JSON format.")
                 (def output-format "json"))
             
-            all-headlines         (parse-org-file file-path convert-to-html? convert-to-markdown?)
-            level-filtered        (filter-headlines-by-level all-headlines min-level max-level)
-            title-filtered        (filter-headlines-by-headline level-filtered title-pattern)
-            custom-id-filtered    (filter-headlines-by-custom-id title-filtered custom-id-pattern)
-            section-filtered      (filter-headlines-by-section custom-id-filtered section-title-pattern)
-            filtered-headlines    (filter-headlines-by-section-custom-id section-filtered section-custom-id-pattern)
-            clean-headlines       (mapv #(clean-headline % convert-to-html? convert-to-markdown?) filtered-headlines)
-            prepared-headlines    (prepare-for-output clean-headlines output-format)
-            output-path           (str/replace file-path #"\.org$" (str "." output-format))]
+            all-headlines      (parse-org-file file-path convert-to-html? convert-to-markdown?)
+            level-filtered     (filter-headlines-by-level all-headlines min-level max-level)
+            title-filtered     (filter-headlines-by-headline level-filtered title-pattern)
+            custom-id-filtered (filter-headlines-by-custom-id title-filtered custom-id-pattern)
+            section-filtered   (filter-headlines-by-section custom-id-filtered section-title-pattern)
+            filtered-headlines (filter-headlines-by-section-custom-id section-filtered section-custom-id-pattern)
+            clean-headlines    (mapv #(clean-headline % convert-to-html? convert-to-markdown?) filtered-headlines)
+            prepared-headlines (prepare-for-output clean-headlines output-format)
+            output-path        (str/replace file-path #"\.org$" (str "." output-format))]
         
         (print-org-structure clean-headlines)
         
