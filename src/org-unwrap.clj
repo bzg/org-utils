@@ -4,17 +4,16 @@
 ;; SPDX-License-Identifier: EPL-2.0
 ;; License-Filename: LICENSES/EPL-2.0.txt
 
-(ns unwrap-text
-  (:require [clojure.string :as str]
-            [babashka.cli :as cli]))
+(require '[clojure.string :as str]
+         '[babashka.cli :as cli])
 
 (def cli-options
-  {:input {:desc "Input file path"
-           :alias :i}
-   :output {:desc "Output file path (defaults to stdout if not provided)"
+  {:input  {:desc  "Input file path"
+            :alias :i}
+   :output {:desc  "Output file path (defaults to stdout if not provided)"
             :alias :o}
-   :help {:desc "Show help"
-          :alias :h}})
+   :help   {:desc  "Show help"
+            :alias :h}})
 
 (defn show-help []
   (println "Unwrap Paragraphs and List Items in Text Files")
