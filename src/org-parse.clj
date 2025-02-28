@@ -28,9 +28,9 @@
     :parse-fn re-pattern]
    ["-H" "--html" "Convert content to HTML"]
    ["-M" "--markdown" "Convert content to Markdown"]
-   ["-f" "--format FORMAT" "Output format: json, edn, yaml, or org"
+   ["-f" "--format FORMAT" "Output format: json, edn, or yaml"
     :default "json"
-    :validate [#(contains? #{"json" "edn" "yaml" "org"} %) "Must be one of: json, edn, yaml, org"]]
+    :validate [#(contains? #{"json" "edn" "yaml"} %) "Must be one of: json, edn, yaml"]]
    ["-h" "--help" "Show this help"]])
 
 ;; Utility functions
@@ -58,8 +58,7 @@
              "  org-parse -H notes.org                   # Convert content to HTML"
              "  org-parse -M notes.org                   # Convert content to Markdown"
              "  org-parse -f edn notes.org               # Output in EDN format"
-             "  org-parse -f yaml notes.org              # Output in YAML format"
-             "  org-parse -f org notes.org               # Output in Org format (default if no conversion)"]))
+             "  org-parse -f yaml notes.org              # Output in YAML format"]))
 
 ;; HTML conversion functions
 (defn extract-links [text]
@@ -246,9 +245,27 @@
 (defn content-to-markdown [content-lines]
   (if (empty? content-lines)
     ""
-    (let [processed-lines (mapv org-to-markdown-markup content-lines)
-          ;; Join lines preserving line breaks for Markdown
-          result          (str/join "\n" processed-lines)]
+    ;; Group lines into paragraphs and join with double newlines
+    (let [paragraphs
+          (reduce (fn [acc line]
+                    (if (str/blank? line)
+                      ;; Start a new paragraph on blank line
+                      (conj acc [])
+                      ;; Add to current paragraph or start new if needed
+                      (if (empty? acc)
+                        [[line]]
+                        (let [last-idx (dec (count acc))]
+                          (if (empty? (get acc last-idx))
+                            (assoc acc last-idx [line])
+                            (update acc last-idx conj line))))))
+                  [[]] content-lines)
+          ;; Process each paragraph - first join lines with single newlines
+          processed-paragraphs (map (fn [para-lines]
+                                      (when (seq para-lines)
+                                        (str/join "\n" (map org-to-markdown-markup para-lines))))
+                                    paragraphs)
+          ;; Then join paragraphs with double newlines
+          result               (str/join "\n\n" (remove empty? processed-paragraphs))]
       result)))
 
 ;; Org-mode parsing functions
@@ -417,39 +434,12 @@
               headlines))
     headlines))
 
-;; Define print-org-structure before it's used in write-org
-(defn print-org-structure [headlines]
-  (doseq [headline headlines]
-    ;; Print headline with proper number of asterisks
-    (println (str (apply str (repeat (:level headline) "*"))
-                  " " (:title headline)))
-
-    ;; Print properties if any
-    (when (seq (:properties headline))
-      (println "  :PROPERTIES:")
-      (doseq [[k v] (:properties headline)]
-        (println (str "  :" (str/upper-case (name k)) ": " v)))
-      (println "  :END:"))
-
-    ;; Print content
-    (when (seq (:content headline))
-      (if (string? (:content headline))
-        ;; If content has been converted to HTML/Markdown, it's a string
-        (println (:content headline))
-        ;; If original format, it's still a vector of lines
-        (do
-          (println) ; Add empty line after properties or headline
-          (doseq [line (:content headline)]
-            (println line))
-          (println))))))
-
 ;; Output functions
 (defn prepare-for-output [headlines format]
   (case format
     "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
     "json" headlines
-    "yaml" headlines
-    "org"  headlines))
+    "yaml" headlines))
 
 (defn write-json [data file-path]
   (with-open [writer (io/writer file-path)]
@@ -465,10 +455,6 @@
 (defn write-yaml [data file-path]
   (with-open [writer (io/writer file-path)]
     (.write writer (yaml/generate-string data :dumper-options {:flow-style :block}))))
-
-(defn write-org [headlines file-path]
-  (with-open [writer (io/writer file-path)]
-    (.write writer (with-out-str (print-org-structure headlines)))))
 
 (defn clean-headline [headline convert-to-html? convert-to-markdown?]
   (let [cleaned (-> headline
@@ -525,27 +511,13 @@
                                               % convert-to-html? convert-to-markdown?) filtered-headlines)
             output-path               (str/replace file-path #"\.org$" (str "." output-format))]
 
-        ;; Output handling based on format and conversion options
-        (cond
-          ;; When specific output format is requested, write to file
-          (not= output-format "json") ; If it's not the default
-          (let [prepared-headlines (prepare-for-output clean-headlines output-format)]
-            (case output-format
-              "json" (write-json prepared-headlines output-path)
-              "edn"  (write-edn prepared-headlines output-path)
-              "yaml" (write-yaml prepared-headlines output-path)
-              "org"  (write-org clean-headlines output-path))
-            (println (str (str/upper-case output-format) " output written to " output-path)))
-
-          ;; If HTML or Markdown conversion requested, use JSON as default
-          (or convert-to-html? convert-to-markdown?)
-          (let [prepared-headlines (prepare-for-output clean-headlines "json")]
-            (write-json prepared-headlines output-path)
-            (println (str "JSON output written to " output-path)))
-
-          ;; Default behavior: print org structure to stdout if no other format specified
-          :else
-          (print-org-structure clean-headlines))))))
+        ;; Always write to file, never to stdout
+        (let [prepared-headlines (prepare-for-output clean-headlines output-format)]
+          (case output-format
+            "json" (write-json prepared-headlines output-path)
+            "edn"  (write-edn prepared-headlines output-path)
+            "yaml" (write-yaml prepared-headlines output-path))
+          (println (str (str/upper-case output-format) " output written to " output-path)))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
