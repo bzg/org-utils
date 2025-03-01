@@ -438,7 +438,7 @@
 
 ;; Output functions
 (defn prepare-for-output [options headlines format]
-  (println (:include-level options))
+  ;; FIXME: Handle data update more nicely
   (let [headlines (mapv #(-> % (update :path (fn [path] (butlast path)))) headlines)
         headlines (if-not (:include-level options)
                     (mapv #(-> % (dissoc :level)) headlines)
