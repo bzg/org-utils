@@ -1,4 +1,6 @@
-* Org utils
+#+title: Org utils
+
+* Utils
 
 - org-unwrap :: Take an Org file and unwrap its paragraphs and lists.
 - org-parse :: Take an Org file and output it as data in json/yaml/edn format.
