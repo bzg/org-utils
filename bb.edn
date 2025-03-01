@@ -1,4 +1,4 @@
-{:version        "0.1"
+{:version        "0.2"
  :description    "Org utils"
  :url            "https://github.com/bzg/org-utils"
  :license        {:name "Eclipse Public License - v 2.0"
