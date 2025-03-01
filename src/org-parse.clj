@@ -28,6 +28,7 @@
     :parse-fn re-pattern]
    ["-H" "--html" "Convert content to HTML"]
    ["-M" "--markdown" "Convert content to Markdown"]
+   ["-l" "--include-level" "Include headlings level"]
    ["-f" "--format FORMAT" "Output format: json, edn, or yaml"
     :default "json"
     :validate [#(contains? #{"json" "edn" "yaml"} %) "Must be one of: json, edn, yaml"]]
@@ -436,8 +437,12 @@
     headlines))
 
 ;; Output functions
-(defn prepare-for-output [headlines format]
-  (let [headlines (mapv #(update % :path (fn [path] (butlast path))) headlines)]
+(defn prepare-for-output [options headlines format]
+  (println (:include-level options))
+  (let [headlines (mapv #(-> % (update :path (fn [path] (butlast path)))) headlines)
+        headlines (if-not (:include-level options)
+                    (mapv #(-> % (dissoc :level)) headlines)
+                    headlines)]
     (case format
       "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
       "json" headlines
@@ -521,15 +526,15 @@
                                        section-filtered section-custom-id-pattern)
             clean-headlines           (mapv #(clean-headline
                                               % convert-to-html? convert-to-markdown?) filtered-headlines)
-            output-path               (str/replace file-path #"\.org$" (str "." output-format))]
+            output-path               (str/replace file-path #"\.org$" (str "." output-format))
+            prepared-headlines        (prepare-for-output options clean-headlines output-format)]
 
-        ;; Always write to file, never to stdout
-        (let [prepared-headlines (prepare-for-output clean-headlines output-format)]
-          (case output-format
-            "json" (write-json prepared-headlines output-path)
-            "edn"  (write-edn prepared-headlines output-path)
-            "yaml" (write-yaml prepared-headlines output-path))
-          (println (str (str/upper-case output-format) " output written to " output-path)))))))
+        (case output-format
+          "json" (write-json prepared-headlines output-path)
+          "edn"  (write-edn prepared-headlines output-path)
+          "yaml" (write-yaml prepared-headlines output-path))
+        (println (str (str/upper-case output-format)
+                      " output written to " output-path))))))
 
 (when (= *file* (System/getProperty "babashka.file"))
   (apply -main *command-line-args*))
