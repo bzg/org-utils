@@ -22,9 +22,9 @@
     :parse-fn re-pattern]
    ["-C" "--section-custom-id REGEX" "Show headlines within sections whose CUSTOM_ID property matches regex"
     :parse-fn re-pattern]
-   ["-T" "--title REGEX" "Show headlines whose title matches regex"
+   ["-t" "--title REGEX" "Show headlines whose title matches regex"
     :parse-fn re-pattern]
-   ["-t" "--section-title REGEX" "Show headlines within sections whose title matches regex"
+   ["-T" "--section-title REGEX" "Show headlines within sections whose title matches regex"
     :parse-fn re-pattern]
    ["-H" "--html" "Convert content to HTML"]
    ["-M" "--markdown" "Convert content to Markdown"]
@@ -39,27 +39,28 @@
   (boolean (re-matches #"^#.*$" line)))
 
 (defn usage [options-summary]
-  (str/join \newline
-            ["Usage: org-parse [options] org-file"
-             ""
-             "Options:"
-             options-summary
-             ""
-             "Examples:"
-             "  org-parse notes.org                       # Process all headlines"
-             "  org-parse -m 2 notes.org                  # Process headlines with level <= 2"
-             "  org-parse -n 2 notes.org                  # Process headlines with level >= 2"
-             "  org-parse -m 3 -n 2 notes.org             # Process headlines with 2 <= level <= 3"
-             "  org-parse -c \"section[0-9]+\" notes.org    # Headlines with CUSTOM_ID matching regex"
-             "  org-parse -m 2 -c \"^ch\" notes.org         # Combine level and CUSTOM_ID filters"
-             "  org-parse -t \"Projects\" notes.org         # Headlines within sections titled 'Projects'"
-             "  org-parse -t \"^(Tasks|Projects)$\" notes.org  # Headlines within 'Tasks' or 'Projects'"
-             "  org-parse -T \"TODO\" notes.org             # Headlines with title matching 'TODO'"
-             "  org-parse -C \"chapter\\d+\" notes.org      # Headlines within sections with CUSTOM_ID matching regex"
-             "  org-parse -H notes.org                   # Convert content to HTML"
-             "  org-parse -M notes.org                   # Convert content to Markdown"
-             "  org-parse -f edn notes.org               # Output in EDN format"
-             "  org-parse -f yaml notes.org              # Output in YAML format"]))
+  (str/join
+   \newline
+   ["Usage: org-parse [options] org-file"
+    ""
+    "Options:"
+    options-summary
+    ""
+    "Examples:"
+    "  org-parse notes.org                         # Process all headlines"
+    "  org-parse -m 2 notes.org                    # Process headlines with level <= 2"
+    "  org-parse -n 2 notes.org                    # Process headlines with level >= 2"
+    "  org-parse -m 3 -n 2 notes.or  g             # Process headlines with 2 <= level <= 3"
+    "  org-parse -c \"section[0-9]+\" notes.org    # Headlines with CUSTOM_ID matching regex"
+    "  org-parse -m 2 -c \"^ch\" notes.org         # Combine level and CUSTOM_ID filters"
+    "  org-parse -T \"Projects\" notes.org         # Headlines within sections titled 'Projects'"
+    "  org-parse -T \"^(WAIT|DONE)$\" notes.org    # Headlines within 'WAIT' or 'DONE'"
+    "  org-parse -t \"TODO\" notes.org             # Headlines with title matching 'TODO'"
+    "  org-parse -C \"chapter\\d+\" notes.org      # Headlines within sections with CUSTOM_ID matching regex"
+    "  org-parse -H notes.org                      # Convert content to HTML"
+    "  org-parse -M notes.org                      # Convert content to Markdown"
+    "  org-parse -f edn notes.org                  # Output in EDN format"
+    "  org-parse -f yaml notes.org                 # Output in YAML format"]))
 
 ;; HTML conversion functions
 (defn extract-links [text]
@@ -89,13 +90,14 @@
      links]))
 
 (defn restore-links-as-html [text placeholder-map links]
-  (reduce (fn [t [idx placeholder]]
-            (let [link      (nth links idx)
-                  html-link (str "<a href=\"" (:url link) "\">" (:text link) "</a>")]
-              (str/replace t placeholder html-link)))
-          text
-          (map-indexed (fn [idx placeholder] [idx placeholder])
-                       (map second placeholder-map))))
+  (reduce
+   (fn [t [idx placeholder]]
+     (let [link      (nth links idx)
+           html-link (str "<a href=\"" (:url link) "\">" (:text link) "</a>")]
+       (str/replace t placeholder html-link)))
+   text
+   (map-indexed (fn [idx placeholder] [idx placeholder])
+                (map second placeholder-map))))
 
 ;; Markdown conversion functions
 (defn extract-links-md [text]
@@ -143,7 +145,8 @@
   (boolean (re-matches #"^\s*\d+[.)]\s+.*$" line)))
 
 (defn is-list-item? [line]
-  (or (is-unordered-list-item? line) (is-ordered-list-item? line)))
+  (or (is-unordered-list-item? line)
+      (is-ordered-list-item? line)))
 
 (defn clean-list-item [line]
   (cond
@@ -248,13 +251,14 @@
          "\n</tbody>\n</table>")))
 
 (defn restore-links-as-markdown [text placeholder-map links]
-  (reduce (fn [t [idx placeholder]]
-            (let [link    (nth links idx)
-                  md-link (str "[" (:text link) "](" (:url link) ")")]
-              (str/replace t placeholder md-link)))
-          text
-          (map-indexed (fn [idx placeholder] [idx placeholder])
-                       (map second placeholder-map))))
+  (reduce
+   (fn [t [idx placeholder]]
+     (let [link    (nth links idx)
+           md-link (str "[" (:text link) "](" (:url link) ")")]
+       (str/replace t placeholder md-link)))
+   text
+   (map-indexed (fn [idx placeholder] [idx placeholder])
+                (map second placeholder-map))))
 
 (defn org-to-markdown-markup [text]
   (let [[text-with-placeholders placeholder-map links]
@@ -351,28 +355,24 @@
                   source-html        (process-src-block-html all-block-lines)]
               (recur (drop (count all-block-lines) remaining-lines)
                      (conj result source-html)))
-
             ;; Quote line processing
             (is-quote-line? current-line)
             (let [quote-lines (take-while is-quote-line? remaining-lines)
                   quote-html  (process-quote-lines-html quote-lines)]
               (recur (drop (count quote-lines) remaining-lines)
                      (conj result quote-html)))
-
             ;; Table processing
             (is-table-row? current-line)
             (let [table-lines (take-while is-table-row? remaining-lines)
                   table-html  (process-table-html table-lines)]
               (recur (drop (count table-lines) remaining-lines)
                      (conj result table-html)))
-
             ;; List processing
             (is-list-item? current-line)
             (let [list-items (take-while is-list-item? remaining-lines)
                   list-html  (process-list-items list-items)]
               (recur (drop (count list-items) remaining-lines)
                      (conj result list-html)))
-
             ;; Regular paragraph text
             :else
             (recur (rest remaining-lines)
