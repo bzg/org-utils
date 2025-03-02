@@ -62,7 +62,6 @@
     "  org-parse -f edn notes.org                  # Output in EDN format"
     "  org-parse -f yaml notes.org                 # Output in YAML format"]))
 
-;; HTML conversion functions
 (defn extract-links [text]
   (let [link-pattern #"\[\[([^\]]+)\]\[([^\]]+)\]\]|\[\[([^\]]+)\]\]"
         matches      (re-seq link-pattern text)
@@ -99,34 +98,17 @@
    (map-indexed (fn [idx placeholder] [idx placeholder])
                 (map second placeholder-map))))
 
-;; Markdown conversion functions
-(defn extract-links-md [text]
-  (let [link-pattern #"\[\[([^\]]+)\]\[([^\]]+)\]\]|\[\[([^\]]+)\]\]"
-        matches      (re-seq link-pattern text)
-        links        (map (fn [match]
-                            (if (nth match 2) ; Full link with description
-                              {:full (first match)
-                               :url  (second match)
-                               :text (nth match 2)}
-                              {:full (first match)
-                               :url  (nth match 3)
-                               :text (nth match 3)}))
-                          matches)]
-    links))
+(defn restore-links-as-markdown [text placeholder-map links]
+  (reduce
+   (fn [t [idx placeholder]]
+     (let [link    (nth links idx)
+           md-link (str "[" (:text link) "](" (:url link) ")")]
+       (str/replace t placeholder md-link)))
+   text
+   (map-indexed (fn [idx placeholder] [idx placeholder])
+                (map second placeholder-map))))
 
-(defn replace-links-with-placeholders-md [text]
-  (let [links           (extract-links-md text)
-        placeholder-map (zipmap
-                         (map :full links)
-                         (map-indexed (fn [idx _] (str "LINKPLACEHOLDER" idx)) links))]
-    [(reduce (fn [t [original placeholder]]
-               (str/replace t original placeholder))
-             text
-             placeholder-map)
-     placeholder-map
-     links]))
-
-(defn org-to-html-markup [text]
+(defn org-to-html [text]
   (let [[text-with-placeholders placeholder-map links]
         (replace-links-with-placeholders text)
         converted (-> text-with-placeholders
@@ -137,6 +119,18 @@
                       (str/replace #"~([^~]+)~" "<code>$1</code>") ;; code
                       (str/replace #"=([^=]+)=" "<code>$1</code>"))] ;; verbatim
     (restore-links-as-html converted placeholder-map links)))
+
+(defn org-to-markdown [text]
+  (let [[text-with-placeholders placeholder-map links]
+        (replace-links-with-placeholders text)
+        converted (-> text-with-placeholders
+                      (str/replace #"\*([^\*]+)\*" "**$1**") ;; bold
+                      (str/replace #"/([^/]+)/" "*$1*")      ;; italic
+                      (str/replace #"_([^_]+)_" "_$1_") ;; underline (keep as is in Markdown)
+                      (str/replace #"\+([^\+]+)\+" "~~$1~~") ;; strikethrough
+                      (str/replace #"~([^~]+)~" "`$1`")      ;; code
+                      (str/replace #"=([^=]+)=" "`$1`"))] ;; verbatim
+    (restore-links-as-markdown converted placeholder-map links)))
 
 (defn is-unordered-list-item? [line]
   (boolean (re-matches #"^\s*[-+*]\s+.*$" line)))
@@ -162,11 +156,11 @@
     (let [first-line (first lines)]
       (if (is-unordered-list-item? first-line)
         (str "<ul>\n"
-             (str/join "\n" (map #(str "<li>" (org-to-html-markup (clean-list-item %)) "</li>")
+             (str/join "\n" (map #(str "<li>" (org-to-html (clean-list-item %)) "</li>")
                                  (take-while is-list-item? lines)))
              "\n</ul>")
         (str "<ol>\n"
-             (str/join "\n" (map #(str "<li>" (org-to-html-markup (clean-list-item %)) "</li>")
+             (str/join "\n" (map #(str "<li>" (org-to-html (clean-list-item %)) "</li>")
                                  (take-while is-list-item? lines)))
              "\n</ol>")))))
 
@@ -225,95 +219,76 @@
                   (str/split #"\s*\|\s*"))]
     (mapv str/trim cells)))
 
-;; Process a table for HTML output
-(defn process-table-html [lines]
+(defn preprocess-table [lines]
   (let [table-rows              (take-while is-table-row? lines)
-        has-header              (is-table-separator? (second table-rows))
+        has-header              (and (> (count table-rows) 1)
+                                     (is-table-separator? (second table-rows)))
         rows-without-separators (if has-header
                                   (concat [(first table-rows)]
                                           (drop 2 table-rows))
                                   table-rows)
         processed-rows          (mapv clean-table-cells rows-without-separators)]
-    (str "<table>\n"
-         (if has-header
-           (str "<thead>\n<tr>"
-                (str/join "" (map #(str "<th>" (org-to-html-markup %) "</th>")
-                                  (first processed-rows)))
-                "</tr>\n</thead>\n")
-           "")
-         "<tbody>\n"
-         (str/join "\n"
-                   (map (fn [row]
-                          (str "<tr>"
-                               (str/join "" (map #(str "<td>" (org-to-html-markup %) "</td>") row))
-                               "</tr>"))
-                        (if has-header (rest processed-rows) processed-rows)))
-         "\n</tbody>\n</table>")))
+    {:rows        processed-rows
+     :has-header  has-header
+     :table-lines table-rows}))
 
-(defn restore-links-as-markdown [text placeholder-map links]
-  (reduce
-   (fn [t [idx placeholder]]
-     (let [link    (nth links idx)
-           md-link (str "[" (:text link) "](" (:url link) ")")]
-       (str/replace t placeholder md-link)))
-   text
-   (map-indexed (fn [idx placeholder] [idx placeholder])
-                (map second placeholder-map))))
-
-(defn org-to-markdown-markup [text]
-  (let [[text-with-placeholders placeholder-map links]
-        (replace-links-with-placeholders-md text)
-        converted (-> text-with-placeholders
-                      (str/replace #"\*([^\*]+)\*" "**$1**") ;; bold
-                      (str/replace #"/([^/]+)/" "*$1*")      ;; italic
-                      (str/replace #"_([^_]+)_" "_$1_") ;; underline (keep as is in Markdown)
-                      (str/replace #"\+([^\+]+)\+" "~~$1~~") ;; strikethrough
-                      (str/replace #"~([^~]+)~" "`$1`")      ;; code
-                      (str/replace #"=([^=]+)=" "`$1`"))] ;; verbatim
-    (restore-links-as-markdown converted placeholder-map links)))
+;; Process a table for HTML output
+(defn process-table-html [lines]
+  (let [{:keys [rows has-header]} (preprocess-table lines)]
+    (if (empty? rows)
+      ""
+      (str "<table>\n"
+           (if has-header
+             (str "<thead>\n<tr>"
+                  (str/join "" (map #(str "<th>" (org-to-html %) "</th>")
+                                    (first rows)))
+                  "</tr>\n</thead>\n")
+             "")
+           "<tbody>\n"
+           (str/join "\n"
+                     (map (fn [row]
+                            (str "<tr>"
+                                 (str/join "" (map #(str "<td>" (org-to-html %) "</td>") row))
+                                 "</tr>"))
+                          (if has-header (rest rows) rows)))
+           "\n</tbody>\n</table>"))))
 
 ;; Process a table for Markdown output
 (defn process-table-markdown [lines]
-  (let [table-rows              (take-while is-table-row? lines)
-        has-header              (is-table-separator? (second table-rows))
-        rows-without-separators (if has-header
-                                  (concat [(first table-rows)]
-                                          (drop 2 table-rows))
-                                  table-rows)
-        processed-rows          (mapv clean-table-cells rows-without-separators)
-        column-widths           (if (seq processed-rows)
-                                  (apply map (fn [& cells]
-                                               (apply max (map count cells)))
-                                         processed-rows)
-                                  [])]
-    (str
-     ;; Header row
-     (when (seq processed-rows)
-       (str "| " (str/join
-                  " | "
-                  (map-indexed
-                   (fn [i cell]
-                     (format (str "%-" (nth column-widths i) "s")
-                             (org-to-markdown-markup cell)))
-                   (first processed-rows)))
-            " |\n"))
-     ;; Separator row
-     (when (seq column-widths)
-       (str "| " (str/join " | " (map #(apply str (repeat % "-")) column-widths)) " |\n"))
-     ;; Data rows
-     (when (seq processed-rows)
-       (str/join
-        "\n"
-        (map #(str "| " (str/join " | "
-                                  (map-indexed
-                                   (fn [i cell]
-                                     (format (str "%-" (nth column-widths i) "s")
-                                             (org-to-markdown-markup cell)))
-                                   %))
-                   " |")
-             (if has-header (rest processed-rows) (rest processed-rows))))))))
-
-;; Quote line detection and processing
+  (let [{:keys [rows has-header]} (preprocess-table lines)
+        column-widths             (if (seq rows)
+                                    (apply map (fn [& cells]
+                                                 (apply max (map count cells)))
+                                           rows)
+                                    [])]
+    (if (empty? rows)
+      ""
+      (str
+       ;; Header row
+       (when (seq rows)
+         (str "| " (str/join
+                    " | "
+                    (map-indexed
+                     (fn [i cell]
+                       (format (str "%-" (nth column-widths i) "s")
+                               (org-to-markdown cell)))
+                     (first rows)))
+              " |\n"))
+       ;; Separator row
+       (when (seq column-widths)
+         (str "| " (str/join " | " (map #(apply str (repeat % "-")) column-widths)) " |\n"))
+       ;; Data rows
+       (when (seq rows)
+         (str/join
+          "\n"
+          (map #(str "| " (str/join " | "
+                                    (map-indexed
+                                     (fn [i cell]
+                                       (format (str "%-" (nth column-widths i) "s")
+                                               (org-to-markdown cell)))
+                                     %))
+                     " |")
+               (if has-header (rest rows) (rest rows)))))))))
 
 ;; Detect if a line is a quote line (starts with colon and space)
 (defn is-quote-line? [line]
@@ -328,14 +303,14 @@
   (let [quote-lines   (take-while is-quote-line? lines)
         quote-content (map extract-quote-content quote-lines)]
     (str "<blockquote>\n"
-         (str/join "\n" (map #(str "<p>" (org-to-html-markup %) "</p>") quote-content))
+         (str/join "\n" (map #(str "<p>" (org-to-html %) "</p>") quote-content))
          "\n</blockquote>")))
 
 ;; Process consecutive quote lines for Markdown output
 (defn process-quote-lines-markdown [lines]
   (let [quote-lines   (take-while is-quote-line? lines)
         quote-content (map extract-quote-content quote-lines)]
-    (str/join "\n" (map #(str "> " (org-to-markdown-markup %)) quote-content))))
+    (str/join "\n" (map #(str "> " (org-to-markdown %)) quote-content))))
 
 (defn content-to-html [content-lines]
   (if (empty? content-lines)
@@ -377,7 +352,7 @@
             :else
             (recur (rest remaining-lines)
                    (conj result
-                         (str "<p>" (org-to-html-markup current-line) "</p>")))))))))
+                         (str "<p>" (org-to-html current-line) "</p>")))))))))
 
 (defn is-unordered-list-item-md? [line]
   (boolean (re-matches #"^\s*[-+*]\s+.*$" line)))
@@ -406,7 +381,7 @@
     lines
     (mapv (fn [line]
             (let [cleaned (clean-list-item-md line)]
-              (org-to-markdown-markup cleaned)))
+              (org-to-markdown cleaned)))
           lines)))
 
 (defn content-to-markdown [content-lines]
@@ -451,7 +426,7 @@
               (recur (rest remaining-lines)
                      (conj result ""))
               (recur (rest remaining-lines)
-                     (conj result (org-to-markdown-markup current-line))))))))))
+                     (conj result (org-to-markdown current-line))))))))))
 
 ;; Org-mode parsing functions
 (defn property-line? [line]
@@ -492,8 +467,8 @@
                properties
                (inc processed-count))))))
 
-;; Path tracking needs to be updated for HTML/Markdown-converted titles
-(defn parse-org-file [file-path convert-to-html? convert-to-markdown?]
+;; Updated to use format instead of boolean flags
+(defn parse-org-file [file-path format]
   (with-open [rdr (io/reader file-path)]
     (loop [lines            (line-seq rdr)
            current-headline nil
@@ -505,14 +480,12 @@
           (str/starts-with? line "*")
           (let [new-level      (count (re-find #"^\*+" line))
                 orig-title     (str/trim (subs line new-level))
-                title          (cond
-                                 convert-to-html?     (org-to-html-markup orig-title)
-                                 convert-to-markdown? (org-to-markdown-markup orig-title)
-                                 :else                orig-title)
+                title          (case format
+                                 :html     (org-to-html orig-title)
+                                 :markdown (org-to-markdown orig-title)
+                                 orig-title)
                 ;; Store original title in path but converted title in headline
-                path-title     (cond
-                                 (or convert-to-html? convert-to-markdown?) orig-title
-                                 :else                                      title)
+                path-title     (if (not= format :plain) orig-title title)
                 ;; Update path stack based on new headline level
                 new-path-stack (if (empty? path-stack)
                                  [path-title]
@@ -615,18 +588,18 @@
               headlines))
     headlines))
 
-;; Output functions
 (defn prepare-for-output [options headlines format]
-  ;; FIXME: Handle data update more nicely
-  (let [headlines (mapv #(-> % (update :path (fn [path] (when (seq path) (butlast path)))))
+  (let [headlines (mapv #(-> % (update :path (fn [path]
+                                               (when (seq path)
+                                                 (butlast path)))))
                         headlines)
         headlines (if-not (:include-level options)
                     (mapv #(-> % (dissoc :level)) headlines)
                     headlines)]
     (case format
-      "edn"  (mapv #(update % :path (fn [path] (apply list path))) headlines)
-      "json" headlines
-      "yaml" headlines)))
+      "edn"  (mapv #(update % :path (fn [path] (when path (apply list path)))) headlines)
+      "json" (mapv #(update % :path (fn [path] (or path []))) headlines)
+      "yaml" (mapv #(update % :path (fn [path] (or path []))) headlines))))
 
 (defn write-json [data file-path]
   (with-open [writer (io/writer file-path)]
@@ -653,7 +626,8 @@
                prepared-data
                :dumper-options {:flow-style :block})))))
 
-(defn clean-headline [headline convert-to-html? convert-to-markdown?]
+;; Updated to use format parameter
+(defn clean-headline [headline format]
   (let [cleaned
         (-> headline
             (update :content
@@ -662,16 +636,13 @@
                                      (not (is-comment? line)))) %))
             (update :properties
                     #(into {} (remove (fn [[_ v]] (str/blank? v)) %))))]
-    (cond
-      convert-to-html?
-      (-> cleaned
-          (update :content content-to-html)
-          (update :title org-to-html-markup))
-      convert-to-markdown?
-      (-> cleaned
-          (update :content content-to-markdown)
-          (update :title org-to-markdown-markup))
-      :else
+    (case format
+      :html     (-> cleaned
+                    (update :content content-to-html)
+                    (update :title org-to-html))
+      :markdown (-> cleaned
+                    (update :content content-to-markdown)
+                    (update :title org-to-markdown))
       cleaned)))
 
 (defn -main [& args]
@@ -691,10 +662,12 @@
             section-title-pattern     (:section-title options)
             title-pattern             (:title options)
             section-custom-id-pattern (:section-custom-id options)
-            convert-to-html?          (:html options)
-            convert-to-markdown?      (:markdown options)
+            format                    (cond
+                                        (:html options)     :html
+                                        (:markdown options) :markdown
+                                        :else               :plain)
             output-format             (:format options)
-            all-headlines             (parse-org-file file-path convert-to-html? convert-to-markdown?)
+            all-headlines             (parse-org-file file-path format)
             level-filtered            (filter-headlines-by-level
                                        all-headlines min-level max-level)
             title-filtered            (filter-headlines-by-headline
@@ -705,8 +678,7 @@
                                        custom-id-filtered section-title-pattern)
             filtered-headlines        (filter-headlines-by-section-custom-id
                                        section-filtered section-custom-id-pattern)
-            clean-headlines           (mapv #(clean-headline
-                                              % convert-to-html? convert-to-markdown?) filtered-headlines)
+            clean-headlines           (mapv #(clean-headline % format) filtered-headlines)
             output-path               (str/replace file-path #"\.org$" (str "." output-format))
             prepared-headlines        (prepare-for-output options clean-headlines output-format)]
 
