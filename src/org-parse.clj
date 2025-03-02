@@ -618,7 +618,8 @@
 ;; Output functions
 (defn prepare-for-output [options headlines format]
   ;; FIXME: Handle data update more nicely
-  (let [headlines (mapv #(-> % (update :path (fn [path] (butlast path)))) headlines)
+  (let [headlines (mapv #(-> % (update :path (fn [path] (when (seq path) (butlast path)))))
+                        headlines)
         headlines (if-not (:include-level options)
                     (mapv #(-> % (dissoc :level)) headlines)
                     headlines)]
