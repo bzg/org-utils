@@ -34,10 +34,6 @@
     :validate [#(contains? #{"json" "edn" "yaml"} %) "Must be one of: json, edn, yaml"]]
    ["-h" "--help" "Show this help"]])
 
-;; Utility functions
-(defn is-comment? [line]
-  (boolean (re-matches #"^#.*$" line)))
-
 (defn usage [options-summary]
   (str/join
    \newline
@@ -132,6 +128,9 @@
                       (str/replace #"=([^=]+)=" "`$1`"))] ;; verbatim
     (restore-links-as-markdown converted placeholder-map links)))
 
+(defn is-comment? [line]
+  (boolean (re-matches #"^#.*$" line)))
+
 (defn is-unordered-list-item? [line]
   (boolean (re-matches #"^\s*[-+*]\s+.*$" line)))
 
@@ -141,6 +140,12 @@
 (defn is-list-item? [line]
   (or (is-unordered-list-item? line)
       (is-ordered-list-item? line)))
+
+(defn is-begin-src? [line]
+  (boolean (re-matches #"(?i)^\s*#\+BEGIN_SRC(?:\s+\w+)?.*$" line)))
+
+(defn is-end-src? [line]
+  (boolean (re-matches #"(?i)^\s*#\+END_SRC.*$" line)))
 
 (defn clean-list-item [line]
   (cond
@@ -163,14 +168,6 @@
              (str/join "\n" (map #(str "<li>" (org-to-html (clean-list-item %)) "</li>")
                                  (take-while is-list-item? lines)))
              "\n</ol>")))))
-
-;; Detect the beginning of a source block
-(defn is-begin-src? [line]
-  (boolean (re-matches #"(?i)^\s*#\+BEGIN_SRC(?:\s+\w+)?.*$" line)))
-
-;; Detect the end of a source block
-(defn is-end-src? [line]
-  (boolean (re-matches #"(?i)^\s*#\+END_SRC.*$" line)))
 
 ;; Extract language from BEGIN_SRC line
 (defn extract-src-language [line]
@@ -534,59 +531,64 @@
                                                    (not (is-comment? line)))) %)))
           headlines)))))
 
-;; Filtering functions
-(defn filter-headlines-by-level [headlines min-level max-level]
-  (filter #(and (or (nil? min-level) (>= (:level %) min-level))
-                (or (nil? max-level) (<= (:level %) max-level)))
-          headlines))
-
-(defn filter-headlines-by-headline [headlines headline-pattern]
-  (if headline-pattern
+(defn filter-headlines
+  "Returns a filtered sequence of headlines based on the provided criteria."
+  [headlines min-level max-level title-pattern custom-id-pattern section-title-pattern]
+  (into
+   []
+   (comp
+    ;; Level filtering
+    (filter #(and (or (nil? min-level) (>= (:level %) min-level))
+                  (or (nil? max-level) (<= (:level %) max-level))))
+    ;; Title filtering
     (filter (fn [headline]
-              (re-find headline-pattern (:title headline)))
-            headlines)
-    headlines))
-
-(defn filter-headlines-by-custom-id [headlines custom-id-pattern]
-  (if custom-id-pattern
+              (or (nil? title-pattern)
+                  (when-let [title (:title headline)]
+                    (re-find title-pattern title)))))
+    ;; Custom ID filtering
     (filter (fn [headline]
-              (when-let [custom-id (get-in headline [:properties :custom_id])]
-                (re-find custom-id-pattern custom-id)))
-            headlines)
-    headlines))
-
-(defn filter-headlines-by-section [headlines section-pattern]
-  (if section-pattern
+              (or (nil? custom-id-pattern)
+                  (when-let [custom-id (get-in headline [:properties :custom_id])]
+                    (re-find custom-id-pattern custom-id)))))
+    ;; Section title filtering
     (filter (fn [headline]
-              (some (fn [path-item]
-                      (re-find section-pattern path-item))
-                    (:path headline)))
-            headlines)
-    headlines))
+              (or (nil? section-title-pattern)
+                  (when-let [path (:path headline)]
+                    (some (fn [path-item]
+                            (when path-item
+                              (re-find section-title-pattern path-item)))
+                          path))))))
+   ;; Process the headlines collection
+   headlines))
 
 (defn filter-headlines-by-section-custom-id [headlines section-custom-id-pattern]
-  (if section-custom-id-pattern
-    (let [matching-custom-ids (atom #{})]
-      ;; First, identify all custom IDs that match the pattern
-      (doseq [headline headlines]
-        (when-let [custom-id (get-in headline [:properties :custom_id])]
-          (when (re-find section-custom-id-pattern custom-id)
-            (swap! matching-custom-ids conj custom-id))))
-
-      ;; Then filter headlines that are in a section with a matching custom ID
-      (filter (fn [headline]
-                (let [path-custom-ids
-                      (for [path-title (:path headline)]
-                        ;; Find the custom-id for this section by title
-                        ;; This is a simplification - in a real implementation
-                        ;; you would need a more robust way to identify sections
-                        (some (fn [h]
-                                (when (= path-title (:title h))
-                                  (get-in h [:properties :custom_id])))
-                              headlines))]
-                  (some @matching-custom-ids (remove nil? path-custom-ids))))
-              headlines))
-    headlines))
+  (if (or (empty? headlines) (nil? section-custom-id-pattern))
+    headlines
+    (let [;; Create an index of headlines by title for faster lookup
+          headline-by-title   (reduce (fn [acc headline]
+                                        (if-let [title (:title headline)]
+                                          (assoc acc title headline)
+                                          acc))
+                                      {}
+                                      headlines)
+          ;; Find all custom IDs that match the pattern in one pass
+          matching-custom-ids (into #{}
+                                    (comp
+                                     (filter #(get-in % [:properties :custom_id]))
+                                     (filter #(re-find section-custom-id-pattern
+                                                       (get-in % [:properties :custom_id])))
+                                     (map #(get-in % [:properties :custom_id])))
+                                    headlines)]
+      ;; Filter headlines that are in a section with a matching custom ID
+      (into []
+            (filter (fn [headline]
+                      (when-let [path (:path headline)]
+                        (some (fn [path-title]
+                                (when-let [section-headline (get headline-by-title path-title)]
+                                  (when-let [custom-id (get-in section-headline [:properties :custom_id])]
+                                    (contains? matching-custom-ids custom-id))))
+                              path))))
+            headlines))))
 
 (defn prepare-for-output [options headlines format]
   (let [headlines (mapv #(-> % (update :path (fn [path]
@@ -612,10 +614,9 @@
               *print-dup*    false]
       (pprint/pprint data writer))))
 
-;; Replace the existing write-yaml function with this:
 (defn write-yaml [data file-path]
   (with-open [writer (io/writer file-path)]
-    ;; Convert keywords in properties to strings before writing
+    ;; Convert keywords in properties to strings
     (let [prepared-data
           (mapv (fn [headline]
                   (update headline :properties
@@ -626,7 +627,6 @@
                prepared-data
                :dumper-options {:flow-style :block})))))
 
-;; Updated to use format parameter
 (defn clean-headline [headline format]
   (let [cleaned
         (-> headline
@@ -668,20 +668,16 @@
                                         :else               :plain)
             output-format             (:format options)
             all-headlines             (parse-org-file file-path format)
-            level-filtered            (filter-headlines-by-level
-                                       all-headlines min-level max-level)
-            title-filtered            (filter-headlines-by-headline
-                                       level-filtered title-pattern)
-            custom-id-filtered        (filter-headlines-by-custom-id
-                                       title-filtered custom-id-pattern)
-            section-filtered          (filter-headlines-by-section
-                                       custom-id-filtered section-title-pattern)
-            filtered-headlines        (filter-headlines-by-section-custom-id
-                                       section-filtered section-custom-id-pattern)
+            filtered-headlines        (-> all-headlines
+                                          (filter-headlines
+                                           min-level max-level
+                                           title-pattern custom-id-pattern
+                                           section-title-pattern)
+                                          (filter-headlines-by-section-custom-id
+                                           section-custom-id-pattern))
             clean-headlines           (mapv #(clean-headline % format) filtered-headlines)
             output-path               (str/replace file-path #"\.org$" (str "." output-format))
             prepared-headlines        (prepare-for-output options clean-headlines output-format)]
-
         (case output-format
           "json" (write-json prepared-headlines output-path)
           "edn"  (write-edn prepared-headlines output-path)
