@@ -149,10 +149,8 @@
   (cond
     (is-unordered-list-item? line)
     (str/replace line #"^\s*[-+*]\s+" "")
-
     (is-ordered-list-item? line)
     (str/replace line #"^\s*\d+[.)]\s+" "")
-
     :else line))
 
 (defn process-list-items [lines]
@@ -233,7 +231,6 @@
                                           (drop 2 table-rows))
                                   table-rows)
         processed-rows          (mapv clean-table-cells rows-without-separators)]
-
     (str "<table>\n"
          (if has-header
            (str "<thead>\n<tr>"
@@ -241,7 +238,6 @@
                                   (first processed-rows)))
                 "</tr>\n</thead>\n")
            "")
-
          "<tbody>\n"
          (str/join "\n"
                    (map (fn [row]
@@ -313,7 +309,30 @@
                    " |")
              (if has-header (rest processed-rows) (rest processed-rows))))))))
 
-;; Update the content-to-html function to handle code blocks and tables
+;; Quote line detection and processing
+
+;; Detect if a line is a quote line (starts with colon and space)
+(defn is-quote-line? [line]
+  (boolean (re-matches #"^\s*:\s.*$" line)))
+
+;; Extract the content of a quote line
+(defn extract-quote-content [line]
+  (str/replace line #"^\s*:\s" ""))
+
+;; Process consecutive quote lines for HTML output
+(defn process-quote-lines-html [lines]
+  (let [quote-lines   (take-while is-quote-line? lines)
+        quote-content (map extract-quote-content quote-lines)]
+    (str "<blockquote>\n"
+         (str/join "\n" (map #(str "<p>" (org-to-html-markup %) "</p>") quote-content))
+         "\n</blockquote>")))
+
+;; Process consecutive quote lines for Markdown output
+(defn process-quote-lines-markdown [lines]
+  (let [quote-lines   (take-while is-quote-line? lines)
+        quote-content (map extract-quote-content quote-lines)]
+    (str/join "\n" (map #(str "> " (org-to-markdown-markup %)) quote-content))))
+
 (defn content-to-html [content-lines]
   (if (empty? content-lines)
     ""
@@ -332,19 +351,29 @@
                   source-html        (process-src-block-html all-block-lines)]
               (recur (drop (count all-block-lines) remaining-lines)
                      (conj result source-html)))
+
+            ;; Quote line processing
+            (is-quote-line? current-line)
+            (let [quote-lines (take-while is-quote-line? remaining-lines)
+                  quote-html  (process-quote-lines-html quote-lines)]
+              (recur (drop (count quote-lines) remaining-lines)
+                     (conj result quote-html)))
+
             ;; Table processing
             (is-table-row? current-line)
             (let [table-lines (take-while is-table-row? remaining-lines)
                   table-html  (process-table-html table-lines)]
               (recur (drop (count table-lines) remaining-lines)
                      (conj result table-html)))
-            ;; List processing (existing)
+
+            ;; List processing
             (is-list-item? current-line)
             (let [list-items (take-while is-list-item? remaining-lines)
                   list-html  (process-list-items list-items)]
               (recur (drop (count list-items) remaining-lines)
                      (conj result list-html)))
-            ;; Regular paragraph text (existing)
+
+            ;; Regular paragraph text
             :else
             (recur (rest remaining-lines)
                    (conj result
@@ -380,7 +409,6 @@
               (org-to-markdown-markup cleaned)))
           lines)))
 
-;; Update the content-to-markdown function to handle code blocks and tables
 (defn content-to-markdown [content-lines]
   (if (empty? content-lines)
     ""
@@ -399,13 +427,19 @@
                   source-md          (process-src-block-markdown all-block-lines)]
               (recur (drop (count all-block-lines) remaining-lines)
                      (conj result source-md)))
+            ;; Quote line processing
+            (is-quote-line? current-line)
+            (let [quote-lines (take-while is-quote-line? remaining-lines)
+                  quote-md    (process-quote-lines-markdown quote-lines)]
+              (recur (drop (count quote-lines) remaining-lines)
+                     (conj result quote-md)))
             ;; Table processing
             (is-table-row? current-line)
             (let [table-lines (take-while is-table-row? remaining-lines)
                   table-md    (process-table-markdown table-lines)]
               (recur (drop (count table-lines) remaining-lines)
                      (conj result table-md)))
-            ;; List processing (handled separately with the list functions)
+            ;; List processing
             (is-list-item-md? current-line)
             (let [list-items (take-while is-list-item-md? remaining-lines)
                   list-md    (process-list-items-md list-items)]
@@ -443,7 +477,6 @@
         (or (empty? remaining-lines)
             (str/includes? (str/trim current-line) ":END:"))
         [properties (inc processed-count)]
-
         ;; Property line
         (property-line? current-line)
         (if-let [[key value] (parse-property current-line)]
@@ -453,7 +486,6 @@
           (recur (rest remaining-lines)
                  properties
                  (inc processed-count)))
-
         ;; Any other line inside drawer - skip it
         :else
         (recur (rest remaining-lines)
