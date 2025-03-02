@@ -50,7 +50,7 @@
     "  org-parse notes.org                         # Process all headlines"
     "  org-parse -m 2 notes.org                    # Process headlines with level <= 2"
     "  org-parse -n 2 notes.org                    # Process headlines with level >= 2"
-    "  org-parse -m 3 -n 2 notes.or  g             # Process headlines with 2 <= level <= 3"
+    "  org-parse -m 3 -n 2 notes.org               # Process headlines with 2 <= level <= 3"
     "  org-parse -c \"section[0-9]+\" notes.org    # Headlines with CUSTOM_ID matching regex"
     "  org-parse -m 2 -c \"^ch\" notes.org         # Combine level and CUSTOM_ID filters"
     "  org-parse -T \"Projects\" notes.org         # Headlines within sections titled 'Projects'"
